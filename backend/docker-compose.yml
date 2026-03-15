@@ -1,0 +1,29 @@
+services:
+  postgres-main:
+    image: postgres:15-alpine
+    container_name: skillswap-postgres-main
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: template1
+    ports:
+      - "51214:5432"
+    restart: unless-stopped
+
+  postgres-shadow:
+    image: postgres:15-alpine
+    container_name: skillswap-postgres-shadow
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: template1
+    ports:
+      - "51215:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: skillswap-redis
+    ports:
+      - "6380:6379"
+    restart: unless-stopped

@@ -1,0 +1,297 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  email                   String                       @unique
+  passwordHash            String
+  isActive                Boolean                      @default(true)
+  isVerified              Boolean                      @default(false)
+  avgRating               Decimal                      @default(0.0) @db.Decimal(3, 2)
+  totalSwaps              Int                          @default(0)
+  totalReviews            Int                          @default(0)
+  trustScore              Decimal                      @default(0.0) @db.Decimal(5, 4)
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  availabilitySlots       AvailabilitySlot[]
+  matchesAsUser1          Match[]                      @relation("MatchUser1")
+  matchesAsUser2          Match[]                      @relation("MatchUser2")
+  messagesSent            Message[]
+  notifications           Notification[]
+  profile                 Profile?
+  refreshTokens           RefreshToken[]
+  reviewsReceived         Review[]                     @relation("ReviewReviewee")
+  reviewsGiven            Review[]                     @relation("ReviewReviewer")
+  swapsAsInitiator        Swap[]                       @relation("SwapInitiator")
+  swapsAsReceiver         Swap[]                       @relation("SwapReceiver")
+  completionConfirmations SwapCompletionConfirmation[]
+  skills                  UserSkill[]
+}
+
+model Profile {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @db.Uuid
+  displayName String?
+  bio         String?
+  avatarUrl   String?
+  location    String?
+  timezone    String?
+  latitude    Decimal? @db.Decimal(10, 7)
+  longitude   Decimal? @db.Decimal(10, 7)
+  notifyEmail Boolean  @default(true)
+  notifyPush  Boolean  @default(true)
+  notifyInApp Boolean  @default(true)
+  pushToken   String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SkillCategory {
+  id        String          @id @default(uuid()) @db.Uuid
+  name      String          @unique
+  parentId  String?         @db.Uuid
+  createdAt DateTime        @default(now())
+  skills    Skill[]
+  parent    SkillCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  SkillCategory[] @relation("CategoryHierarchy")
+}
+
+model Skill {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  categoryId  String        @db.Uuid
+  createdAt   DateTime      @default(now())
+  category    SkillCategory @relation(fields: [categoryId], references: [id])
+  userSkills  UserSkill[]
+}
+
+model UserSkill {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @db.Uuid
+  skillId          String           @db.Uuid
+  type             SkillType
+  proficiencyLevel ProficiencyLevel
+  description      String?
+  endorsementCount Int              @default(0)
+  isVerified       Boolean          @default(false)
+  addedAt          DateTime         @default(now())
+  swapsAsOffered   Swap[]           @relation("OfferedSkill")
+  swapsAsRequested Swap[]           @relation("RequestedSkill")
+  skill            Skill            @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+}
+
+model AvailabilitySlot {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  dayOfWeek   Int      @db.SmallInt
+  slotStart   DateTime @db.Time(6)
+  slotEnd     DateTime @db.Time(6)
+  isRecurring Boolean  @default(false)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek])
+}
+
+model Match {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId1            String   @db.Uuid
+  userId2            String   @db.Uuid
+  compatibilityScore Decimal  @db.Decimal(5, 4)
+  strategyUsed       String
+  sharedInterests    Json?
+  isActive           Boolean  @default(true)
+  status             String   @default("pending")
+  matchedAt          DateTime @default(now())
+  expiresAt          DateTime
+  user1              User     @relation("MatchUser1", fields: [userId1], references: [id], onDelete: Cascade)
+  user2              User     @relation("MatchUser2", fields: [userId2], references: [id], onDelete: Cascade)
+  swaps              Swap[]
+
+  @@index([userId1])
+  @@index([userId2])
+  @@index([status])
+}
+
+model Swap {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  matchId                 String                       @db.Uuid
+  initiatorId             String                       @db.Uuid
+  receiverId              String                       @db.Uuid
+  offeredSkillId          String                       @db.Uuid
+  requestedSkillId        String                       @db.Uuid
+  status                  SwapStatus                   @default(PENDING)
+  terms                   String?
+  scheduledAt             DateTime?
+  completedAt             DateTime?
+  cancelReason            String?
+  initiatorConfirmed      Boolean                      @default(false)
+  receiverConfirmed       Boolean                      @default(false)
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  expiresAt               DateTime?
+  chat                    Chat?
+  reviews                 Review[]
+  initiator               User                         @relation("SwapInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  match                   Match                        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  offeredSkill            UserSkill                    @relation("OfferedSkill", fields: [offeredSkillId], references: [id])
+  receiver                User                         @relation("SwapReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  requestedSkill          UserSkill                    @relation("RequestedSkill", fields: [requestedSkillId], references: [id])
+  completionConfirmations SwapCompletionConfirmation[]
+  session                 SwapSession?
+
+  @@index([initiatorId])
+  @@index([receiverId])
+  @@index([status])
+  @@index([matchId])
+  @@index([initiatorId, status])
+  @@index([receiverId, status])
+}
+
+model SwapSession {
+  id               String        @id @default(uuid()) @db.Uuid
+  swapId           String        @unique @db.Uuid
+  scheduledAt      DateTime
+  durationMins     Int
+  status           SessionStatus @default(SCHEDULED)
+  meetingUrl       String?
+  notes            String?
+  rescheduledCount Int           @default(0)
+  createdAt        DateTime      @default(now())
+  completedAt      DateTime?
+  swap             Swap          @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@index([swapId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model SwapCompletionConfirmation {
+  id          String   @id @default(uuid()) @db.Uuid
+  swapId      String   @db.Uuid
+  userId      String   @db.Uuid
+  confirmedAt DateTime @default(now())
+  swap        Swap     @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, userId])
+  @@index([swapId])
+}
+
+model Review {
+  id         String   @id @default(uuid()) @db.Uuid
+  swapId     String   @db.Uuid
+  reviewerId String   @db.Uuid
+  revieweeId String   @db.Uuid
+  rating     Int      @db.SmallInt
+  comment    String?
+  isFlagged  Boolean  @default(false)
+  isPublic   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  reviewee   User     @relation("ReviewReviewee", fields: [revieweeId], references: [id], onDelete: Cascade)
+  reviewer   User     @relation("ReviewReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  swap       Swap     @relation(fields: [swapId], references: [id], onDelete: Cascade)
+
+  @@unique([swapId, reviewerId])
+  @@index([revieweeId])
+  @@index([swapId])
+}
+
+model Chat {
+  id        String    @id @default(uuid()) @db.Uuid
+  swapId    String    @unique @db.Uuid
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  swap      Swap      @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  messages  Message[]
+}
+
+model Message {
+  id        String      @id @default(uuid()) @db.Uuid
+  chatId    String      @db.Uuid
+  senderId  String      @db.Uuid
+  content   String
+  msgType   MessageType @default(TEXT)
+  isRead    Boolean     @default(false)
+  sentAt    DateTime    @default(now())
+  readAt    DateTime?
+  isDeleted Boolean     @default(false)
+  chat      Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender    User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, sentAt(sort: Desc)])
+  @@index([chatId, isRead])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  type      String
+  title     String
+  body      String
+  payload   Json?
+  isRead    Boolean   @default(false)
+  channel   String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, isRead])
+  @@index([type])
+  @@index([channel])
+}
+
+enum SkillType {
+  offer
+  want
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum SwapStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  MISSED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+}

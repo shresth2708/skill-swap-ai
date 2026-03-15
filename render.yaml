@@ -1,0 +1,55 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+#
+# First deploy: fill dashboard prompts for `sync: false` vars. Do not commit secrets.
+# - DATABASE_URL: Must be a Postgres URL for Prisma, starting with postgresql:// or postgres://
+#   (copy from Neon: Dashboard -> your DB -> Connect -> "Prisma" or "URI", not the HTTPS console URL).
+#   Example shape: postgresql://USER:PASS@ep-....neon.tech:5432/neondb?sslmode=require
+#   If build fails P1012, the value in Render is wrong, missing protocol, or truncated.
+# - CORS_ORIGIN: your static site origin, e.g. https://skillswap-web.onrender.com
+# - VITE_API_URL: public API base with /api, e.g. https://skillswap-api.onrender.com/api
+# - REDIS_URL: Upstash — prefer rediss:// from the console. If Redis keeps crashing, remove REDIS_URL
+#   so the API runs (in-memory cache; Socket.io in-process only) until you fix the URL.
+# If Neon/Upstash strings were ever pasted in chat, rotate credentials in those providers.
+
+services:
+  - type: web
+    name: skillswap-api
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+  - type: web
+    name: skillswap-web
+    runtime: static
+    # staticPublishPath is from REPO root (not rootDir). Do not set rootDir for this service:
+    # with rootDir=skillswap-frontend + publish=dist, Render can look for the wrong path and fail.
+    buildCommand: cd skillswap-frontend && npm install && npm run build
+    staticPublishPath: skillswap-frontend/dist
+    buildFilter:
+      paths:
+        - skillswap-frontend/**
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
